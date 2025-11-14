@@ -9,7 +9,7 @@
 // and this program is running at https://research.swtch.com/qr/draw/.
 //
 // To run the program locally, use “go run local.go”.
-package main
+package qart
 
 import (
 	"bytes"

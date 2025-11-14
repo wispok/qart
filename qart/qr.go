@@ -4,7 +4,7 @@
 
 //go:build wasm
 
-package main
+package qart
 
 import (
 	"bytes"

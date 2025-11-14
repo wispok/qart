@@ -4,9 +4,8 @@
 
 // "go run local.go" to get the live development environment on localhost:8080.
 
-//go:build ignore
 
-package main
+package qart
 
 import (
 	"log"
