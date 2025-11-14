@@ -5,14 +5,14 @@
 /*
 Package qr encodes QR codes.
 */
-package qr // import "rsc.io/qr"
+package qr // import "github.com/wispok/qart"
 
 import (
 	"errors"
 	"image"
 	"image/color"
 
-	"rsc.io/qr/coding"
+	"github.com/wispok/qart/coding"
 )
 
 // A Level denotes a QR error correction level.
