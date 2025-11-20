@@ -191,6 +191,7 @@ func NewRSEncoder(f *Field, c int) *RSEncoder {
 
 // ECC writes to check the error correcting code bytes
 // for data using the given Reed-Solomon parameters.
+// what it does: given data, it computes the c parity bytes
 func (rs *RSEncoder) ECC(data []byte, check []byte) {
 	if len(check) < rs.c {
 		panic("gf256: invalid check byte length")
@@ -211,10 +212,12 @@ func (rs *RSEncoder) ECC(data []byte, check []byte) {
 		p = make([]byte, n)
 	}
 	copy(p, data)
+	// p contains data + c zeros.
 	for i := len(data); i < len(p); i++ {
 		p[i] = 0
 	}
 
+	// THIS PERFORMS REED-SOLOMON POLYNOMIAL LONG DIVISION WITH GALOIS
 	// Divide p by gen, leaving the remainder in p[len(data):].
 	// p[0] is the most significant term in p, and
 	// gen[0] is the most significant term in the generator,

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-
 package qart
 
 import (
@@ -13,10 +12,11 @@ import (
 	"image/draw"
 	"image/png"
 	"math/rand"
+	"os"
 	"sort"
 	"time"
 
-	"github.com/wispok/qart"
+	qr "github.com/wispok/qart"
 	"github.com/wispok/qart/coding"
 	"github.com/wispok/qart/gf256"
 	"github.com/wispok/qart/qart/internal/resize"
@@ -143,6 +143,17 @@ func (m *Image) target(x, y int) (targ byte, contrast int) {
 	return
 }
 
+// inCenterROI reports whether the module at (x,y) is inside the central ROI.
+// N is the number of modules on one side of the QR (len(p.Pixel)).
+func inCenterROI(x, y, N int) bool {
+	// Simple square center: leave a margin around the border.
+	margin := N / 7 // tune this to match the paper’s figure
+	if x < margin || y < margin || x >= N-margin || y >= N-margin {
+		return false // border region
+	}
+	return true // center region
+}
+
 func (m *Image) rotate(p *coding.Plan, rot int) {
 	if rot == 0 {
 		return
@@ -181,6 +192,7 @@ func (m *Image) rotate(p *coding.Plan, rot int) {
 	p.Pixel = pix
 }
 
+// this is where the qr code is actually generated from
 func (m *Image) Encode() ([]byte, error) {
 	m.Clamp()
 	dt := 17 + 4*m.Version + m.Size
@@ -258,6 +270,8 @@ Again:
 
 		bdata := data[doff/8 : doff/8+nd]
 		cdata := data[p.DataBytes+coff/8 : p.DataBytes+coff/8+nc]
+		// basis vectors for this block
+		// each block has its own set of basis vectors
 		bb := newBlock(nd, nc, rs, bdata, cdata)
 		bitblocks[blocknum] = bb
 
@@ -290,6 +304,26 @@ Again:
 
 		// Can edit [lo, hi) and checksum bits to hit target.
 		// Determine which ones to try first.
+		// saliency for roi criteria
+		/*
+			order := make([]Pixorder, (hi-lo)+nc*8)
+			for i := lo; i < hi; i++ {
+				order[i-lo].Off = doff + i
+			}
+			for i := 0; i < nc*8; i++ {
+				order[hi-lo+i].Off = p.DataBytes*8 + coff + i
+			}
+			if m.OnlyDataBits {
+				order = order[:hi-lo]
+			}
+			for i := range order {
+				po := &order[i]
+				po.Priority = pixByOff[po.Off].Contrast<<8 | rand.Intn(256)
+			}
+			sort.Sort(byPriority(order))
+		*/
+
+		// border vs center for roi criteria
 		order := make([]Pixorder, (hi-lo)+nc*8)
 		for i := lo; i < hi; i++ {
 			order[i-lo].Off = doff + i
@@ -300,9 +334,18 @@ Again:
 		if m.OnlyDataBits {
 			order = order[:hi-lo]
 		}
+
+		N := len(p.Pixel)
 		for i := range order {
 			po := &order[i]
-			po.Priority = pixByOff[po.Off].Contrast<<8 | rand.Intn(256)
+			pinfo := &pixByOff[po.Off]
+
+			weight := 1
+			if inCenterROI(pinfo.X, pinfo.Y, N) {
+				weight = 100 // center is 100× more important than border
+			}
+
+			po.Priority = (weight << 16) | rand.Intn(1<<16)
 		}
 		sort.Sort(byPriority(order))
 
@@ -553,6 +596,9 @@ func newBlock(nd, nc int, rs *gf256.RSEncoder, dat, cdata []byte) *BitBlock {
 		panic("cdata")
 	}
 
+	// b.M is the set of basis vectors for the bits.
+	// contains nd*8 rows, each of length nd+nc bytes.
+	// row i has bit i set to 1.
 	b.M = make([][]byte, nd*8)
 	for i := range b.M {
 		row := make([]byte, nd+nc)
@@ -560,9 +606,19 @@ func newBlock(nd, nc int, rs *gf256.RSEncoder, dat, cdata []byte) *BitBlock {
 		for j := range row {
 			row[j] = 0
 		}
+		// sets the ith bit to 1 (basis vector)
 		row[i/8] = 1 << (7 - uint(i%8))
+		// computes the RS error correction for data in row[:nd]
+		// and writing the resulting check bytes to row[nd:]
+		// row[:nd] is the data portion of the row
+		// row[nd:] is the check portion of the row (parity), next nc bytes
+		// and computes the parity / check bytes such that:
+		// [ row[:nd] | row[nd:] ] is a valid RS codeword.
 		rs.ECC(row[:nd], row[nd:])
 	}
+	// thus, b.M contains all the valid rs codewords
+	// for all basis vectors.
+	// with b.M, we can generate any rs codeword
 	return b
 }
 
@@ -678,11 +734,20 @@ func decode(data []byte, max int) (*image.RGBA, error) {
 	return irgba, nil
 }
 
+// max is the number of modules in the qr code
 func makeTarg(data []byte, max int) ([][]int, error) {
 	i, err := decode(data, max)
 	if err != nil {
 		return nil, err
 	}
+
+	f, err := os.Create("./decoded_image.png")
+	if err == nil {
+		defer f.Close()
+		png.Encode(f, i)
+		fmt.Println("wrote decoded_image.png")
+	}
+
 	b := i.Bounds()
 	dx, dy := b.Dx(), b.Dy()
 	targ := make([][]int, dy)
