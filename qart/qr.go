@@ -22,6 +22,14 @@ import (
 	"github.com/wispok/qart/qart/internal/resize"
 )
 
+type ControlMode int
+
+const (
+	ControlSaliency   ControlMode = iota // Cox: contrast-based
+	ControlCenterHard                    // only center pixels are candidates
+	ControlCenterSoft                    // center preferred, border still allowed
+)
+
 type Image struct {
 	File  []byte
 	Img48 []byte
@@ -44,6 +52,8 @@ type Image struct {
 
 	// OnlyDataBits says to use only data bits, not check bits.
 	OnlyDataBits bool
+	// Which control-bit selection strategy to use.
+	ControlMode ControlMode
 
 	// Control is a PNG showing the pixels that we controlled.
 	// Pixels we don't control are grayed out.
@@ -335,19 +345,73 @@ Again:
 			order = order[:hi-lo]
 		}
 
+		tmp := order[:0]
 		N := len(p.Pixel)
-		for i := range order {
-			po := &order[i]
-			pinfo := &pixByOff[po.Off]
 
-			weight := 1
-			if inCenterROI(pinfo.X, pinfo.Y, N) {
-				weight = 100 // center is 100× more important than border
+		switch m.ControlMode {
+
+		case ControlSaliency:
+			// Original Cox: contrast / saliency based.
+			for i := range order {
+				po := &order[i]
+				c := pixByOff[po.Off].Contrast
+				po.Priority = (c << 8) | rand.Intn(256)
 			}
 
-			po.Priority = (weight << 16) | rand.Intn(1<<16)
+		case ControlCenterHard:
+			// Only center pixels are candidates at all.
+			tmp = tmp[:0]
+			for i := range order {
+				po := &order[i]
+				pinfo := &pixByOff[po.Off]
+				if !inCenterROI(pinfo.X, pinfo.Y, N) {
+					continue // drop border modules
+				}
+				// all center pixels same “base” priority; random tie-break only
+				po.Priority = (1 << 16) | rand.Intn(1<<16)
+				tmp = append(tmp, *po)
+			}
+			order = tmp
+
+		case ControlCenterSoft:
+			// “Soft” center weighting but ALWAYS handle HardZero bits first.
+
+			for i := range order {
+				po := &order[i]
+				pinfo := &pixByOff[po.Off]
+
+				// HardZero bits MUST be processed first.
+				if pinfo.HardZero {
+					// Giant priority ensures they rise to the top.
+					po.Priority = (1 << 30) | rand.Intn(1<<16)
+					continue
+				}
+
+				// Normal soft center weighting.
+				weight := 1
+				if inCenterROI(pinfo.X, pinfo.Y, N) {
+					weight = 100 // center pixels much more desirable
+				}
+
+				po.Priority = (weight << 16) | rand.Intn(1<<16)
+			}
 		}
+
 		sort.Sort(byPriority(order))
+		/*
+			for i := range order {
+				po := &order[i]
+				pinfo := &pixByOff[po.Off]
+
+				weight := 1
+				if inCenterROI(pinfo.X, pinfo.Y, N) {
+					weight = 100 // center is 100× more important than border
+				}
+
+				po.Priority = (weight << 16) | rand.Intn(1<<16)
+			}
+			sort.Sort(byPriority(order))
+		*/
 
 		const mark = false
 		for i := range order {
