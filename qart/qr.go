@@ -314,26 +314,6 @@ Again:
 
 		// Can edit [lo, hi) and checksum bits to hit target.
 		// Determine which ones to try first.
-		// saliency for roi criteria
-		/*
-			order := make([]Pixorder, (hi-lo)+nc*8)
-			for i := lo; i < hi; i++ {
-				order[i-lo].Off = doff + i
-			}
-			for i := 0; i < nc*8; i++ {
-				order[hi-lo+i].Off = p.DataBytes*8 + coff + i
-			}
-			if m.OnlyDataBits {
-				order = order[:hi-lo]
-			}
-			for i := range order {
-				po := &order[i]
-				po.Priority = pixByOff[po.Off].Contrast<<8 | rand.Intn(256)
-			}
-			sort.Sort(byPriority(order))
-		*/
-
-		// border vs center for roi criteria
 		order := make([]Pixorder, (hi-lo)+nc*8)
 		for i := lo; i < hi; i++ {
 			order[i-lo].Off = doff + i
@@ -398,20 +378,6 @@ Again:
 		}
 
 		sort.Sort(byPriority(order))
-		/*
-			for i := range order {
-				po := &order[i]
-				pinfo := &pixByOff[po.Off]
-
-				weight := 1
-				if inCenterROI(pinfo.X, pinfo.Y, N) {
-					weight = 100 // center is 100× more important than border
-				}
-
-				po.Priority = (weight << 16) | rand.Intn(1<<16)
-			}
-			sort.Sort(byPriority(order))
-		*/
 
 		const mark = false
 		for i := range order {
