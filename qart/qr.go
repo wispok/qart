@@ -328,6 +328,7 @@ Again:
 		tmp := order[:0]
 		N := len(p.Pixel)
 
+		// here we decide the criteria to form T area
 		switch m.ControlMode {
 
 		case ControlSaliency:
