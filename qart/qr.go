@@ -62,6 +62,8 @@ type Image struct {
 
 	// Code is the final QR code.
 	Code *qr.Code
+
+	MatchedOffsets []int
 }
 
 func (m *Image) SetFile(data []byte) {
@@ -245,6 +247,8 @@ func (m *Image) Encode() ([]byte, error) {
 		}
 	}
 
+	matchedOffsets := make([]int, 0, len(pixByOff))
+
 Again:
 	// Count fixed initial data bits, prepare template URL.
 	url := m.URL + "#"
@@ -378,7 +382,6 @@ Again:
 		}
 
 		sort.Sort(byPriority(order))
-
 		const mark = false
 		for i := range order {
 			po := &order[i]
@@ -406,6 +409,7 @@ Again:
 			if bb.canSet(uint(bi), bval) {
 				pinfo.Block = bb
 				pinfo.Bit = uint(bi)
+				matchedOffsets = append(matchedOffsets, po.Off)
 				if mark {
 					p.Pixel[pinfo.Y][pinfo.X] = coding.Black
 				}
@@ -565,6 +569,7 @@ Again:
 	}
 
 	m.Code = &qr.Code{Bitmap: cc.Bitmap, Size: cc.Size, Stride: cc.Stride, Scale: m.Scale}
+	m.MatchedOffsets = matchedOffsets
 
 	if m.SaveControl {
 		m.Control = pngEncode(makeImage(0, cc.Size, 4, m.Scale, func(x, y int) (rgba uint32) {
