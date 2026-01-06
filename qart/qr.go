@@ -64,6 +64,7 @@ type Image struct {
 	Code *qr.Code
 
 	MatchedOffsets []int
+	MatchedModules []image.Point
 }
 
 func (m *Image) SetFile(data []byte) {
@@ -247,6 +248,7 @@ func (m *Image) Encode() ([]byte, error) {
 		}
 	}
 
+	matchedModules := make([]image.Point, 0, len(pixByOff))
 	matchedOffsets := make([]int, 0, len(pixByOff))
 
 Again:
@@ -410,6 +412,7 @@ Again:
 				pinfo.Block = bb
 				pinfo.Bit = uint(bi)
 				matchedOffsets = append(matchedOffsets, po.Off)
+				matchedModules = append(matchedModules, image.Point{X: pinfo.X, Y: pinfo.Y})
 				if mark {
 					p.Pixel[pinfo.Y][pinfo.X] = coding.Black
 				}
@@ -570,6 +573,7 @@ Again:
 
 	m.Code = &qr.Code{Bitmap: cc.Bitmap, Size: cc.Size, Stride: cc.Stride, Scale: m.Scale}
 	m.MatchedOffsets = matchedOffsets
+	m.MatchedModules = matchedModules
 
 	if m.SaveControl {
 		m.Control = pngEncode(makeImage(0, cc.Size, 4, m.Scale, func(x, y int) (rgba uint32) {
