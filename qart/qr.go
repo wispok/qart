@@ -153,6 +153,32 @@ func (m *Image) target(x, y int) (targ byte, contrast int) {
 	return
 }
 
+// Calculate dynamic margin based on the QR Plan
+func getDynamicMargin(p *coding.Plan) int {
+	N := len(p.Pixel)
+	// The paper places parity bits on the borders.
+	// Total CheckBytes / 4 sides gives us a rough module depth.
+	// For Version 5-L: 26 check bytes = 208 bits.
+	// 208 bits / 4 sides / N modules wide gives us the depth.
+	checkBits := p.CheckBytes * 8
+	depth := (checkBits / 4) / N
+
+	// Ensure a minimum margin of 3 to protect Finder Patterns (7x7 blocks)
+	// and the Timing Patterns.
+	if depth < 3 {
+		depth = 3
+	}
+	return depth
+}
+
+func inCenterROI(x, y, N, margin int) bool {
+	if x < margin || y < margin || x >= N-margin || y >= N-margin {
+		return false // border region (Parity/Check bits)
+	}
+	return true // center region (Control/Data bits)
+}
+
+/*
 // inCenterROI reports whether the module at (x,y) is inside the central ROI.
 // N is the number of modules on one side of the QR (len(p.Pixel)).
 func inCenterROI(x, y, N int) bool {
@@ -163,6 +189,7 @@ func inCenterROI(x, y, N int) bool {
 	}
 	return true // center region
 }
+*/
 
 func (m *Image) rotate(p *coding.Plan, rot int) {
 	if rot == 0 {
@@ -328,6 +355,9 @@ Again:
 		tmp := order[:0]
 		N := len(p.Pixel)
 
+		// Calculate margin once per plan [cite: 142-144]
+		dynamicMargin := getDynamicMargin(p)
+
 		switch m.ControlMode {
 
 		case ControlSaliency:
@@ -344,10 +374,10 @@ Again:
 			for i := range order {
 				po := &order[i]
 				pinfo := &pixByOff[po.Off]
-				if !inCenterROI(pinfo.X, pinfo.Y, N) {
-					continue // drop border modules
+				// Use the dynamic margin here
+				if !inCenterROI(pinfo.X, pinfo.Y, N, dynamicMargin) {
+					continue
 				}
-				// all center pixels same “base” priority; random tie-break only
 				po.Priority = (1 << 16) | rand.Intn(1<<16)
 				tmp = append(tmp, *po)
 			}
@@ -359,20 +389,15 @@ Again:
 			for i := range order {
 				po := &order[i]
 				pinfo := &pixByOff[po.Off]
-
-				// HardZero bits MUST be processed first.
 				if pinfo.HardZero {
-					// Giant priority ensures they rise to the top.
 					po.Priority = (1 << 30) | rand.Intn(1<<16)
 					continue
 				}
-
-				// Normal soft center weighting.
 				weight := 1
-				if inCenterROI(pinfo.X, pinfo.Y, N) {
-					weight = 100 // center pixels much more desirable
+				// Use the dynamic margin here
+				if inCenterROI(pinfo.X, pinfo.Y, N, dynamicMargin) {
+					weight = 100
 				}
-
 				po.Priority = (weight << 16) | rand.Intn(1<<16)
 			}
 		}
